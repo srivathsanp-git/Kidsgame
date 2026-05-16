@@ -58,27 +58,31 @@
     };
 
     function initGame() {
-      gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      gameState.app = new PIXI.Application({
-        resizeTo: window,
-        backgroundAlpha: 0,
-        antialias: true,
-        resolution: window.devicePixelRatio || 1
-      });
-      document.body.appendChild(gameState.app.view);
-      gameState.root = new PIXI.Container();
-      gameState.app.stage.addChild(gameState.root);
-      gameState.choiceGroup = new PIXI.Container();
-      gameState.targetGroup = new PIXI.Container();
-      gameState.root.addChild(gameState.targetGroup);
-      gameState.root.addChild(gameState.choiceGroup);
-      drawRestartButton();
-      drawTargetDisplay();
-      buildChoiceButtons();
-      setNewRound();
-      gameState.app.ticker.add(updateParticles);
-      window.addEventListener('resize', handleResize);
-      handleResize();
+      try {
+        gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        gameState.app = new PIXI.Application({
+          resizeTo: window,
+          backgroundAlpha: 0,
+          antialias: true,
+          resolution: window.devicePixelRatio || 1
+        });
+        document.body.appendChild(gameState.app.view);
+        gameState.root = new PIXI.Container();
+        gameState.app.stage.addChild(gameState.root);
+        gameState.choiceGroup = new PIXI.Container();
+        gameState.targetGroup = new PIXI.Container();
+        gameState.root.addChild(gameState.targetGroup);
+        gameState.root.addChild(gameState.choiceGroup);
+        drawRestartButton();
+        drawTargetDisplay();
+        buildChoiceButtons();
+        setNewRound();
+        gameState.app.ticker.add(updateParticles);
+        window.addEventListener('resize', handleResize);
+        handleResize();
+      } catch (error) {
+        showLoadError(error);
+      }
     }
 
     function drawRestartButton() {
@@ -94,7 +98,6 @@
       outer.lineStyle(6, 0x4b5563, 1);
       outer.drawRoundedRect(0, 0, 120, 120, 32);
       outer.endFill();
-      outer.shadow = new PIXI.filters.DropShadowFilter();
       button.addChild(outer);
 
       const star = new PIXI.Graphics();
@@ -275,7 +278,6 @@
       card.lineStyle(8, 0x111827, 0.18);
       card.drawRoundedRect(0, 0, size, size, 36);
       card.endFill();
-      card.filters = [new PIXI.filters.DropShadowFilter({ blur: 20, color: 0x1f2937, alpha: 0.15, distance: 10 })];
       container.addChild(card);
       const faceCont = new PIXI.Container();
       faceCont.x = size / 2;
@@ -520,6 +522,37 @@
       }
       return array;
     }
+
+    function showLoadError(error) {
+      const message = document.createElement('div');
+      message.style.position = 'fixed';
+      message.style.left = '0';
+      message.style.top = '0';
+      message.style.width = '100vw';
+      message.style.height = '100vh';
+      message.style.background = 'rgba(15, 23, 42, 0.95)';
+      message.style.color = '#fef3c7';
+      message.style.display = 'flex';
+      message.style.alignItems = 'center';
+      message.style.justifyContent = 'center';
+      message.style.padding = '24px';
+      message.style.textAlign = 'center';
+      message.style.zIndex = '9999';
+      message.style.fontFamily = 'Fredoka One, sans-serif';
+      message.innerHTML = `<div><div style="font-size:28px; margin-bottom:16px;">Oops! The game failed to load.</div><div style="font-size:18px; max-width:700px; white-space:pre-wrap;">${String(error).replace(/</g, '&lt;')}</div></div>`;
+      document.body.appendChild(message);
+      console.error(error);
+    }
+
+    window.addEventListener('error', event => {
+      event.preventDefault();
+      showLoadError(event.error || event.message || 'Unknown error');
+    });
+
+    window.addEventListener('unhandledrejection', event => {
+      event.preventDefault();
+      showLoadError(event.reason || 'Unhandled rejection');
+    });
 
     window.addEventListener('load', initGame);
   </script>
