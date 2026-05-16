@@ -72,6 +72,12 @@
           throw new Error('Pixi renderer failed to initialize');
         }
         const canvasNode = renderer.view instanceof Node ? renderer.view : renderer.view.canvas || null;
+        console.log('pixi-init', {
+          viewConstructor: renderer.view?.constructor?.name,
+          canvasConstructor: canvasNode?.constructor?.name,
+          canvasNodeIsNode: canvasNode instanceof Node,
+          hasCanvasProp: 'canvas' in renderer.view
+        });
         if (!canvasNode) {
           throw new Error('Pixi renderer produced no DOM canvas element');
         }
