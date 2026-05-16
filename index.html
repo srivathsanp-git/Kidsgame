@@ -57,10 +57,10 @@
       nextRoundTimeout: null
     };
 
-    function initGame() {
+    async function initGame() {
       try {
         gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const renderer = PIXI.autoDetectRenderer({
+        const renderer = await PIXI.autoDetectRenderer({
           width: window.innerWidth,
           height: window.innerHeight,
           backgroundAlpha: 0,
@@ -68,6 +68,9 @@
           resolution: window.devicePixelRatio || 1,
           autoDensity: true
         });
+        if (!renderer || !renderer.view) {
+          throw new Error('Pixi renderer failed to initialize');
+        }
         document.body.appendChild(renderer.view);
         const stage = new PIXI.Container();
         const ticker = new PIXI.Ticker();
@@ -572,7 +575,9 @@
       showLoadError(event.reason || 'Unhandled rejection');
     });
 
-    window.addEventListener('load', initGame);
+    window.addEventListener('load', () => {
+      initGame().catch(showLoadError);
+    });
   </script>
 </body>
 </html>
