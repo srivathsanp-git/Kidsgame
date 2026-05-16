@@ -61,10 +61,12 @@
       try {
         gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         gameState.app = new PIXI.Application({
-          resizeTo: window,
+          width: window.innerWidth,
+          height: window.innerHeight,
           backgroundAlpha: 0,
           antialias: true,
-          resolution: window.devicePixelRatio || 1
+          resolution: window.devicePixelRatio || 1,
+          autoDensity: true
         });
         document.body.appendChild(gameState.app.view);
         gameState.root = new PIXI.Container();
@@ -511,7 +513,13 @@
 
     function handleResize() {
       if (!gameState.app) return;
-      gameState.app.renderer.resize(window.innerWidth, window.innerHeight);
+      const scale = window.devicePixelRatio || 1;
+      gameState.app.renderer.resolution = scale;
+      if (gameState.app.renderer.autoDensity) {
+        gameState.app.renderer.resize(window.innerWidth, window.innerHeight);
+      } else {
+        gameState.app.renderer.resize(window.innerWidth, window.innerHeight);
+      }
       layoutChoices();
     }
 
