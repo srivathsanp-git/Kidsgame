@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Toddler Tap Adventure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      overflow: hidden;
+      background: radial-gradient(circle at top, #fffaea 0%, #ffffff 35%, #c8f7ff 100%);
+      font-family: 'Fredoka One', sans-serif;
+      touch-action: manipulation;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: #fffef5;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+      display: block;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.4/howler.min.js"></script>
+</head>
+<body>
+  <script>
+    const gameState = {
+      app: null,
+      audioCtx: null,
+      root: null,
+      targetGroup: null,
+      choiceGroup: null,
+      restartButton: null,
+      targetData: null,
+      choiceItems: [],
+      confettiParticles: [],
+      busy: false,
+      items: [
+        { name: 'sun', color: 0xffb703, accent: 0xffcc66, eyes: [0.5, 0.44], mouth: 'smile' },
+        { name: 'mint', color: 0x34d399, accent: 0x8ef1c8, eyes: [0.35, 0.45], mouth: 'smile' },
+        { name: 'sky', color: 0x38bdf8, accent: 0xa5f3fc, eyes: [0.5, 0.4], mouth: 'grin' },
+        { name: 'coral', color: 0xfb7185, accent: 0xf9a8d4, eyes: [0.38, 0.47], mouth: 'o' },
+        { name: 'purple', color: 0xa78bfa, accent: 0xd8b4fe, eyes: [0.55, 0.48], mouth: 'smile' }
+      ],
+      currentChoices: [],
+      targetIndex: 0,
+      nextRoundTimeout: null
+    };
+
+    function initGame() {
+      gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      gameState.app = new PIXI.Application({
+        resizeTo: window,
+        backgroundAlpha: 0,
+        antialias: true,
+        resolution: window.devicePixelRatio || 1
+      });
+      document.body.appendChild(gameState.app.view);
+      gameState.root = new PIXI.Container();
+      gameState.app.stage.addChild(gameState.root);
+      gameState.choiceGroup = new PIXI.Container();
+      gameState.targetGroup = new PIXI.Container();
+      gameState.root.addChild(gameState.targetGroup);
+      gameState.root.addChild(gameState.choiceGroup);
+      drawRestartButton();
+      drawTargetDisplay();
+      buildChoiceButtons();
+      setNewRound();
+      gameState.app.ticker.add(updateParticles);
+      window.addEventListener('resize', handleResize);
+      handleResize();
+    }
+
+    function drawRestartButton() {
+      const button = new PIXI.Container();
+      button.interactive = true;
+      button.buttonMode = true;
+      button.cursor = 'pointer';
+      button.x = 24;
+      button.y = 24;
+
+      const outer = new PIXI.Graphics();
+      outer.beginFill(0xffffff);
+      outer.lineStyle(6, 0x4b5563, 1);
+      outer.drawRoundedRect(0, 0, 120, 120, 32);
+      outer.endFill();
+      outer.shadow = new PIXI.filters.DropShadowFilter();
+      button.addChild(outer);
+
+      const star = new PIXI.Graphics();
+      star.beginFill(0xffe066);
+      star.lineStyle(5, 0xf59e0b, 1);
+      drawStar(star, 60, 60, 5, 30, 14);
+      star.endFill();
+      button.addChild(star);
+
+      button.on('pointerdown', () => {
+        if (gameState.busy) return;
+        playTapSound();
+        animateButtonPress(button);
+        restartGame();
+      });
+      gameState.restartButton = button;
+      gameState.root.addChild(button);
+    }
+
+    function drawStar(graphics, cx, cy, spikes, outerRadius, innerRadius) {
+      let rot = Math.PI / 2 * 3;
+      let x = cx;
+      let y = cy;
+      const step = Math.PI / spikes;
+      graphics.moveTo(cx, cy - outerRadius);
+      for (let i = 0; i < spikes; i++) {
+        x = cx + Math.cos(rot) * outerRadius;
+        y = cy + Math.sin(rot) * outerRadius;
+        graphics.lineTo(x, y);
+        rot += step;
+        x = cx + Math.cos(rot) * innerRadius;
+        y = cy + Math.sin(rot) * innerRadius;
+        graphics.lineTo(x, y);
+        rot += step;
+      }
+      graphics.lineTo(cx, cy - outerRadius);
+    }
+
+    function animateButtonPress(button) {
+      const tween = { scale: 1 };
+      const targetScale = 0.88;
+      const duration = 10;
+      let tick = 0;
+      gameState.app.ticker.add(function buttonPress(delta) {
+        tick += delta;
+        if (tick >= duration) {
+          button.scale.set(1);
+          gameState.app.ticker.remove(buttonPress);
+          return;
+        }
+        const progress = tick / duration;
+        button.scale.set(1 - (1 - targetScale) * Math.sin(progress * Math.PI));
+      });
+    }
+
+    function drawTargetDisplay() {
+      const targetPad = new PIXI.Container();
+      targetPad.x = 0;
+      targetPad.y = 0;
+      const targetBg = new PIXI.Graphics();
+      targetBg.beginFill(0xffffff, 0.9);
+      targetBg.lineStyle(8, 0x60a5fa, 1);
+      targetBg.drawRoundedRect(0, 0, 320, 320, 48);
+      targetBg.endFill();
+      targetBg.x = 0;
+      targetBg.y = 0;
+      targetPad.addChild(targetBg);
+
+      const accentRing = new PIXI.Graphics();
+      accentRing.lineStyle(14, 0xfff59e, 0.35);
+      accentRing.drawCircle(160, 120, 102);
+      targetPad.addChild(accentRing);
+
+      const targetLabel = new PIXI.Text('', {
+        fontFamily: 'Fredoka One',
+        fontSize: 34,
+        fill: 0x111827,
+        align: 'center'
+      });
+      targetLabel.anchor.set(0.5);
+      targetLabel.x = 160;
+      targetLabel.y = 42;
+      targetLabel.text = '';
+      targetPad.addChild(targetLabel);
+
+      const targetFace = new PIXI.Container();
+      targetFace.x = 160;
+      targetFace.y = 190;
+      targetPad.addChild(targetFace);
+      gameState.targetGroup.addChild(targetPad);
+      gameState.targetGroup.targetFace = targetFace;
+      gameState.targetGroup.targetLabel = targetLabel;
+      gameState.targetGroup.bg = targetBg;
+    }
+
+    function buildChoiceButtons() {
+      for (let i = 0; i < 3; i += 1) {
+        const choice = new PIXI.Container();
+        choice.interactive = true;
+        choice.buttonMode = true;
+        choice.cursor = 'pointer';
+        choice.index = i;
+        choice.on('pointerdown', () => handleChoiceTap(choice));
+        gameState.choiceGroup.addChild(choice);
+        gameState.choiceItems.push(choice);
+      }
+    }
+
+    function handleChoiceTap(choice) {
+      if (gameState.busy || !choice.choiceData) return;
+      playTapSound();
+      animateChoicePress(choice);
+      if (choice.choiceData.name === gameState.targetData.name) {
+        playSuccess();
+        showCelebration(choice);
+      } else {
+        playWrong();
+        animateWrongChoice(choice);
+      }
+    }
+
+    function setNewRound() {
+      gameState.busy = false;
+      if (gameState.nextRoundTimeout) {
+        clearTimeout(gameState.nextRoundTimeout);
+        gameState.nextRoundTimeout = null;
+      }
+      const shuffled = shuffleArray(gameState.items.slice());
+      gameState.currentChoices = shuffled.slice(0, 3);
+      gameState.targetData = gameState.currentChoices[Math.floor(Math.random() * gameState.currentChoices.length)];
+      updateTargetFace();
+      layoutChoices();
+      animateRoundStart();
+    }
+
+    function updateTargetFace() {
+      const faceContainer = gameState.targetGroup.targetFace;
+      faceContainer.removeChildren();
+      const target = gameState.targetData;
+      drawCharacterFace(faceContainer, target, 1.2);
+      const labelIcon = new PIXI.Graphics();
+      labelIcon.beginFill(target.color);
+      labelIcon.lineStyle(8, 0x0f172a, 1);
+      labelIcon.drawCircle(0, 0, 16);
+      labelIcon.endFill();
+      labelIcon.x = -72;
+      labelIcon.y = -26;
+      faceContainer.addChild(labelIcon);
+      gameState.targetGroup.targetLabel.text = '';
+    }
+
+    function layoutChoices() {
+      const width = gameState.app.renderer.width;
+      const gap = 30;
+      const choiceSize = Math.min(180, (width - 120) / 3);
+      const startX = (width - (choiceSize * 3 + gap * 2)) / 2;
+      gameState.choiceItems.forEach((choice, index) => {
+        choice.x = startX + index * (choiceSize + gap);
+        choice.y = Math.max(360, gameState.app.renderer.height * 0.52);
+        choice.removeChildren();
+        const data = gameState.currentChoices[index];
+        choice.choiceData = data;
+        drawChoiceCard(choice, data, choiceSize);
+        choice.scale.set(0.88);
+      });
+      const targetX = width / 2 - 160;
+      gameState.targetGroup.x = targetX;
+      gameState.targetGroup.y = Math.max(20, gameState.app.renderer.height * 0.08);
+      if (gameState.restartButton) {
+        gameState.restartButton.x = 24;
+        gameState.restartButton.y = 24;
+      }
+    }
+
+    function drawChoiceCard(container, data, size) {
+      const card = new PIXI.Graphics();
+      card.beginFill(0xffffff);
+      card.lineStyle(8, 0x111827, 0.18);
+      card.drawRoundedRect(0, 0, size, size, 36);
+      card.endFill();
+      card.filters = [new PIXI.filters.DropShadowFilter({ blur: 20, color: 0x1f2937, alpha: 0.15, distance: 10 })];
+      container.addChild(card);
+      const faceCont = new PIXI.Container();
+      faceCont.x = size / 2;
+      faceCont.y = size / 2;
+      container.addChild(faceCont);
+      drawCharacterFace(faceCont, data, 0.85);
+    }
+
+    function drawCharacterFace(container, data, scale = 1) {
+      const body = new PIXI.Graphics();
+      body.beginFill(data.color);
+      body.lineStyle(8, 0x111827, 0.9);
+      body.drawRoundedRect(-68 * scale, -68 * scale, 136 * scale, 136 * scale, 36 * scale);
+      body.endFill();
+      container.addChild(body);
+      const leftEye = new PIXI.Graphics();
+      leftEye.beginFill(0xffffff);
+      leftEye.drawCircle(-30 * scale, -20 * scale, 16 * scale);
+      leftEye.endFill();
+      leftEye.beginFill(0x111827);
+      leftEye.drawCircle(-30 * scale, -20 * scale, 7 * scale);
+      leftEye.endFill();
+      container.addChild(leftEye);
+      const rightEye = new PIXI.Graphics();
+      rightEye.beginFill(0xffffff);
+      rightEye.drawCircle(30 * scale, -20 * scale, 16 * scale);
+      rightEye.endFill();
+      rightEye.beginFill(0x111827);
+      rightEye.drawCircle(30 * scale, -20 * scale, 7 * scale);
+      rightEye.endFill();
+      container.addChild(rightEye);
+      const mouth = new PIXI.Graphics();
+      mouth.lineStyle(8 * scale, 0x111827, 1);
+      if (data.mouth === 'o') {
+        mouth.beginFill(0xf8fafc);
+        mouth.drawCircle(0, 24 * scale, 12 * scale);
+        mouth.endFill();
+      } else {
+        mouth.arc(0, 22 * scale, 26 * scale, Math.PI * 0.15, Math.PI * 0.85);
+      }
+      container.addChild(mouth);
+      const cheek = new PIXI.Graphics();
+      cheek.beginFill(data.accent);
+      cheek.drawCircle(-36 * scale, 10 * scale, 16 * scale);
+      cheek.drawCircle(36 * scale, 10 * scale, 16 * scale);
+      cheek.endFill();
+      container.addChild(cheek);
+    }
+
+    function animateRoundStart() {
+      gameState.choiceItems.forEach((choice, index) => {
+        choice.scale.set(0.7);
+        const delay = 5 * index;
+        let tick = 0;
+        gameState.app.ticker.add(function roundIn(delta) {
+          tick += delta;
+          const progress = Math.min(1, tick / 12);
+          const eased = 1 - Math.pow(1 - progress, 3);
+          choice.scale.set(0.7 + eased * 0.3);
+          choice.y = choice.y - Math.sin(progress * Math.PI) * 8;
+          if (progress >= 1) {
+            gameState.app.ticker.remove(roundIn);
+          }
+        });
+      });
+      const targetFace = gameState.targetGroup.targetFace;
+      targetFace.scale.set(0.8);
+      let tick = 0;
+      gameState.app.ticker.add(function targetIn(delta) {
+        tick += delta;
+        const progress = Math.min(1, tick / 18);
+        const eased = 1 - Math.pow(1 - progress, 4);
+        targetFace.scale.set(0.8 + eased * 0.2);
+        if (progress >= 1) {
+          gameState.app.ticker.remove(targetIn);
+        }
+      });
+    }
+
+    function animateChoicePress(choice) {
+      const originalScale = choice.scale.x;
+      let tick = 0;
+      gameState.app.ticker.add(function choicePress(delta) {
+        tick += delta;
+        if (tick >= 12) {
+          choice.scale.set(originalScale);
+          gameState.app.ticker.remove(choicePress);
+          return;
+        }
+        const progress = tick / 12;
+        const amount = Math.sin(progress * Math.PI) * 0.15;
+        choice.scale.set(originalScale + amount);
+      });
+    }
+
+    function animateWrongChoice(choice) {
+      const startX = choice.x;
+      let tick = 0;
+      gameState.app.ticker.add(function shake(delta) {
+        tick += delta;
+        const progress = tick / 12;
+        if (progress >= 1) {
+          choice.x = startX;
+          gameState.app.ticker.remove(shake);
+          return;
+        }
+        choice.x = startX + Math.sin(progress * Math.PI * 6) * 12;
+      });
+    }
+
+    function showCelebration(choice) {
+      gameState.busy = true;
+      createConfettiBurst(choice.x + choice.width / 2, choice.y + choice.height / 2);
+      createConfettiBurst(gameState.targetGroup.x + 160, gameState.targetGroup.y + 160);
+      let tick = 0;
+      const face = choice.children[1];
+      choice.scale.set(1.08);
+      gameState.app.ticker.add(function pop(delta) {
+        tick += delta;
+        if (tick >= 20) {
+          gameState.app.ticker.remove(pop);
+          choice.scale.set(1);
+          gameState.nextRoundTimeout = setTimeout(setNewRound, 900);
+          return;
+        }
+        const pulse = 1 + Math.sin((tick / 20) * Math.PI) * 0.16;
+        choice.scale.set(pulse);
+      });
+    }
+
+    function createConfettiBurst(x, y) {
+      const count = 24;
+      for (let i = 0; i < count; i += 1) {
+        const particle = new PIXI.Graphics();
+        const size = 10 + Math.random() * 10;
+        const palette = [0xf97316, 0x22c55e, 0x38bdf8, 0xc026d3, 0xfacc15];
+        particle.beginFill(palette[Math.floor(Math.random() * palette.length)]);
+        particle.drawStar(0, 0, 4, size * 0.45, size * 0.2);
+        particle.endFill();
+        particle.x = x;
+        particle.y = y;
+        particle.scale.set(0.7);
+        particle.alpha = 1;
+        gameState.app.stage.addChild(particle);
+        gameState.confettiParticles.push({
+          sprite: particle,
+          vx: (Math.random() - 0.5) * 12,
+          vy: -6 - Math.random() * 8,
+          rotationSpeed: (Math.random() - 0.5) * 0.3,
+          life: 64 + Math.random() * 24
+        });
+      }
+    }
+
+    function updateParticles(delta) {
+      const particles = gameState.confettiParticles;
+      for (let i = particles.length - 1; i >= 0; i -= 1) {
+        const p = particles[i];
+        p.life -= delta;
+        p.sprite.x += p.vx * delta;
+        p.sprite.y += p.vy * delta;
+        p.sprite.rotation += p.rotationSpeed * delta;
+        p.sprite.vy += 0.2 * delta;
+        p.sprite.alpha = Math.max(0, p.life / 96);
+        if (p.life <= 0 || p.sprite.y > gameState.app.renderer.height + 40) {
+          gameState.app.stage.removeChild(p.sprite);
+          particles.splice(i, 1);
+        }
+      }
+    }
+
+    function playTapSound() {
+      const now = gameState.audioCtx.currentTime;
+      const oscillator = gameState.audioCtx.createOscillator();
+      const gain = gameState.audioCtx.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(320, now);
+      oscillator.frequency.exponentialRampToValueAtTime(620, now + 0.12);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      oscillator.connect(gain).connect(gameState.audioCtx.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.18);
+    }
+
+    function playSuccess() {
+      const now = gameState.audioCtx.currentTime;
+      const melody = [261.63, 329.63, 392.00];
+      melody.forEach((freq, index) => {
+        const start = now + index * 0.09;
+        const osc = gameState.audioCtx.createOscillator();
+        const gain = gameState.audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.25, start + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, start + 0.2);
+        osc.connect(gain).connect(gameState.audioCtx.destination);
+        osc.start(start);
+        osc.stop(start + 0.22);
+      });
+    }
+
+    function playWrong() {
+      const now = gameState.audioCtx.currentTime;
+      const oscillator = gameState.audioCtx.createOscillator();
+      const gain = gameState.audioCtx.createGain();
+      oscillator.type = 'square';
+      oscillator.frequency.setValueAtTime(120, now);
+      oscillator.frequency.linearRampToValueAtTime(80, now + 0.17);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+      oscillator.connect(gain).connect(gameState.audioCtx.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.2);
+    }
+
+    function restartGame() {
+      if (gameState.nextRoundTimeout) {
+        clearTimeout(gameState.nextRoundTimeout);
+        gameState.nextRoundTimeout = null;
+      }
+      gameState.confettiParticles.forEach(p => {
+        gameState.app.stage.removeChild(p.sprite);
+      });
+      gameState.confettiParticles = [];
+      setNewRound();
+    }
+
+    function handleResize() {
+      if (!gameState.app) return;
+      gameState.app.renderer.resize(window.innerWidth, window.innerHeight);
+      layoutChoices();
+    }
+
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    window.addEventListener('load', initGame);
+  </script>
+</body>
+</html>
