@@ -60,7 +60,7 @@
     function initGame() {
       try {
         gameState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        gameState.app = new PIXI.Application({
+        const renderer = PIXI.autoDetectRenderer({
           width: window.innerWidth,
           height: window.innerHeight,
           backgroundAlpha: 0,
@@ -68,7 +68,17 @@
           resolution: window.devicePixelRatio || 1,
           autoDensity: true
         });
-        document.body.appendChild(gameState.app.view);
+        document.body.appendChild(renderer.view);
+        const stage = new PIXI.Container();
+        const ticker = new PIXI.Ticker();
+        ticker.add(() => renderer.render(stage));
+        ticker.start();
+        gameState.app = {
+          renderer,
+          stage,
+          view: renderer.view,
+          ticker
+        };
         gameState.root = new PIXI.Container();
         gameState.app.stage.addChild(gameState.root);
         gameState.choiceGroup = new PIXI.Container();
